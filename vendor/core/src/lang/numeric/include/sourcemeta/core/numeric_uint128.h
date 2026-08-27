@@ -103,9 +103,16 @@ struct uint128_t {
     // The intrinsic is not usable during constant evaluation, so fall through
     // to the portable computation, which yields the same value
 #if defined(_MSC_VER)
+    #if defined(_M_X64) || defined(_M_AMD64)
     if !consteval {
       result_low = _umul128(left.low, right.low, &result_high);
     } else
+    #elif defined(_M_ARM64) || defined(_M_ARM64EC)
+    if !consteval {
+      result_high = __umulh(left.low, right.low);
+      result_low  = x * y
+    } else
+    #endif
 #endif
     {
       const std::uint64_t left_low{left.low & 0xFFFFFFFF};
@@ -139,11 +146,13 @@ struct uint128_t {
     // The intrinsic is not usable during constant evaluation, so fall through
     // to the portable computation, which yields the same value
 #if defined(_MSC_VER)
+    #if defined(_M_X64) || defined(_M_AMD64)
     if !consteval {
       std::uint64_t remainder;
       quotient_low =
           _udiv128(remainder_high, dividend.low, divisor, &remainder);
     } else
+    #endif
 #endif
     {
       quotient_low = 0;
@@ -183,9 +192,11 @@ struct uint128_t {
     // The intrinsic is not usable during constant evaluation, so fall through
     // to the portable computation, which yields the same value
 #if defined(_MSC_VER)
+    #if defined(_M_X64) || defined(_M_AMD64)
     if !consteval {
       _udiv128(remainder_high, dividend.low, divisor, &remainder);
     } else
+    #endif
 #endif
     {
       remainder = remainder_high;
