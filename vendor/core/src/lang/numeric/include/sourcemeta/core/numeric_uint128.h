@@ -110,7 +110,7 @@ struct uint128_t {
     #elif defined(_M_ARM64) || defined(_M_ARM64EC)
     if !consteval {
       result_high = __umulh(left.low, right.low);
-      result_low  = left.low * right.low
+      result_low  = left.low * right.low;
     } else
     #endif
 #endif
