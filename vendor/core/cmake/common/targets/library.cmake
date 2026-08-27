@@ -56,7 +56,13 @@ function(sourcemeta_library)
       ${PUBLIC_HEADER} ${ABSOLUTE_PRIVATE_HEADERS} ${SOURCEMETA_LIBRARY_SOURCES})
     sourcemeta_add_default_options(PRIVATE ${TARGET_NAME})
     if(SOURCEMETA_COMPILER_MSVC)
-      target_link_options(${TARGET_NAME} PRIVATE /guard:cf /CETCOMPAT)
+      if(CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64")
+        target_link_options(${TARGET_NAME} PRIVATE /guard:cf)
+      else() 
+        # AMD64
+        target_link_options(${TARGET_NAME} PRIVATE /guard:cf /CETCOMPAT)
+      endif()
+      
     endif()
   else()
     add_library(${TARGET_NAME} INTERFACE

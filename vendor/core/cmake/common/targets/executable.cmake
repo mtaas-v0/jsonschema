@@ -44,7 +44,11 @@ function(sourcemeta_executable)
   # See https://learn.microsoft.com/en-us/cpp/build/reference/guard-enable-control-flow-guard
   # See https://learn.microsoft.com/en-us/cpp/build/reference/cetcompat
   if(SOURCEMETA_COMPILER_MSVC)
-    target_link_options(${TARGET_NAME} PRIVATE /guard:cf /CETCOMPAT)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64")
+      target_link_options(${TARGET_NAME} PRIVATE /guard:cf)
+    else()
+      target_link_options(${TARGET_NAME} PRIVATE /guard:cf /CETCOMPAT)
+    endif()
   endif()
 
   # Linux-specific ELF linker hardening and compatibility options
