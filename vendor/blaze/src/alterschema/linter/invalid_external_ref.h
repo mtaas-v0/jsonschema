@@ -9,19 +9,20 @@ public:
             "resolved"} {};
 
   [[nodiscard]] auto
-  condition(const JSON &schema, const JSON &, const Vocabularies &vocabularies,
-            const SchemaFrame &frame, const SchemaFrame::Location &location,
-            const SchemaWalker &walker, const SchemaResolver &resolver,
-            const bool) const -> SchemaTransformRule::Result override {
+  condition(const JSON &schema, const JSON &,
+            const SchemaVocabularies &vocabularies, const SchemaFrame &frame,
+            const SchemaFrame::Location &location, const SchemaWalker &walker,
+            const SchemaResolver &resolver, const bool) const
+      -> SchemaTransformRule::Result override {
     ONLY_CONTINUE_IF(!frame.standalone());
     ONLY_CONTINUE_IF(vocabularies.contains_any(
-        {Vocabularies::Known::JSON_Schema_2020_12_Core,
-         Vocabularies::Known::JSON_Schema_2019_09_Core,
-         Vocabularies::Known::JSON_Schema_Draft_7,
-         Vocabularies::Known::JSON_Schema_Draft_6,
-         Vocabularies::Known::JSON_Schema_Draft_4,
-         Vocabularies::Known::JSON_Schema_Draft_3,
-         Vocabularies::Known::JSON_Schema_Draft_3_Hyper}));
+        {SchemaVocabularies::Known::JSON_Schema_2020_12_Core,
+         SchemaVocabularies::Known::JSON_Schema_2019_09_Core,
+         SchemaVocabularies::Known::JSON_Schema_Draft_7,
+         SchemaVocabularies::Known::JSON_Schema_Draft_6,
+         SchemaVocabularies::Known::JSON_Schema_Draft_4,
+         SchemaVocabularies::Known::JSON_Schema_Draft_3,
+         SchemaVocabularies::Known::JSON_Schema_Draft_3_Hyper}));
     ONLY_CONTINUE_IF(schema.is_object() && schema.defines(KEYWORD) &&
                      schema.at(KEYWORD).is_string());
 
@@ -41,7 +42,7 @@ public:
     ONLY_CONTINUE_IF(!reference_base.empty());
 
     // Known official metaschemas are always resolvable
-    ONLY_CONTINUE_IF(!is_known_schema(reference_base));
+    ONLY_CONTINUE_IF(!schema_is_known(reference_base));
 
     // If the base exists in the frame, the reference is internal (e.g. an
     // embedded $id). A bad fragment on an internal base is handled by the
@@ -69,8 +70,13 @@ public:
     }
 
     auto remote{resolver(reference_base)};
+    std::optional<sourcemeta::core::JSON> owned;
+    if (remote.has_value()) {
+      owned = std::move(remote).to_owned();
+    }
+
     const auto &[entry,
-                 _]{this->resolver_cache_.emplace(base_key, std::move(remote))};
+                 _]{this->resolver_cache_.emplace(base_key, std::move(owned))};
     if (!entry->second.has_value()) {
       return APPLIES_TO_KEYWORDS(KEYWORD);
     }
@@ -93,17 +99,30 @@ private:
       frame_cache_;
 
   [[nodiscard]] auto
-  is_fragment_invalid(const SchemaFrame::ReferencesEntry &reference_entry,
+  is_fragment_invalid(const SchemaFrame::Reference &reference_entry,
                       const std::optional<JSON> &remote,
                       const JSON::String &base_key, const SchemaWalker &walker,
                       const SchemaResolver &resolver,
                       const SchemaFrame::Location &location) const -> bool {
+    // A pointer fragment names a place of the document, and the document can
+    // answer for that on its own without paying to frame it
+    const auto fragment_pointer{sourcemeta::core::fragment_to_pointer(
+        sourcemeta::core::URI{reference_entry.destination})};
+    if (fragment_pointer.has_value() &&
+        sourcemeta::core::try_get(remote.value(), fragment_pointer.value()) !=
+            nullptr) {
+      return false;
+    }
+
+    // An anchor is not a place of the document, and the drafts that spell
+    // identifiers as `id` let one look just like a pointer, so a miss above
+    // still has to ask the frame. Only the anchors of the remote matter here,
+    // rather than every pointer of it
     auto frame_iterator{this->frame_cache_.find(base_key)};
     if (frame_iterator == this->frame_cache_.end()) {
-      auto remote_frame{
-          std::make_unique<SchemaFrame>(SchemaFrame::Mode::Locations)};
-      remote_frame->analyse(remote.value(), walker, resolver, location.dialect,
-                            base_key);
+      auto remote_frame{std::make_unique<SchemaFrame>(
+          SchemaFrame::Mode::Locations, remote.value(), walker, resolver,
+          location.dialect, base_key)};
       frame_iterator =
           this->frame_cache_.emplace(base_key, std::move(remote_frame)).first;
     }

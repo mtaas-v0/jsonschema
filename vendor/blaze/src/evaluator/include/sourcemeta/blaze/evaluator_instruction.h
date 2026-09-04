@@ -71,6 +71,7 @@ enum class InstructionIndex : std::uint8_t {
   AssertionArrayPrefixEvaluate,
   AssertionObjectPropertiesSimple,
   AnnotationEmit,
+  AnnotationEmitWrapped,
   AnnotationToParent,
   AnnotationBasenameToParent,
   Evaluate,
@@ -176,6 +177,7 @@ constexpr std::string_view InstructionNames[] = {
     "AssertionArrayPrefixEvaluate",
     "AssertionObjectPropertiesSimple",
     "AnnotationEmit",
+    "AnnotationEmitWrapped",
     "AnnotationToParent",
     "AnnotationBasenameToParent",
     "Evaluate",
@@ -237,6 +239,21 @@ inline auto is_annotation(const InstructionIndex type) noexcept -> bool {
       return true;
     case InstructionIndex::AnnotationEmit:
       return true;
+    case InstructionIndex::AnnotationEmitWrapped:
+      return true;
+    default:
+      return false;
+  }
+}
+
+/// @ingroup evaluator
+/// Check if a given instruction type corresponds to a wrapped annotation
+inline auto is_wrapped_annotation(const InstructionIndex type) noexcept
+    -> bool {
+  switch (type) {
+    case InstructionIndex::AnnotationBasenameToParent:
+    case InstructionIndex::AnnotationEmitWrapped:
+      return true;
     default:
       return false;
   }
@@ -257,6 +274,7 @@ struct InstructionExtra {
   sourcemeta::core::Pointer relative_schema_location;
   std::string keyword_location;
   std::size_t schema_resource;
+  std::size_t vocabulary;
 };
 
 /// @ingroup evaluator

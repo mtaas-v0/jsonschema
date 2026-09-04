@@ -11,7 +11,13 @@ jsonschema lint [schemas-or-directories...] [--http/-h] [--fix/-f]
   [--rule/-a <rule-schema>] [--top-level-rule/-t <rule-schema>]
   [--format-assertion/-F]
   [--default-dialect/-d <uri>] [--indentation/-n <spaces>]
+  [--configuration/-C <path>]
 ```
+
+> [!NOTE]
+> See [Resolving External References](./guides/resolution.markdown) for every way of
+> making referenced schemas available, including how to handle a reference whose
+> URI differs from the identifier the target schema declares.
 
 JSON Schema is a surprisingly expressive schema language. Like with traditional
 programming languages, writing efficient and maintainable schemas takes

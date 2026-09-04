@@ -4,7 +4,6 @@
 #include <sourcemeta/blaze/codegen.h>
 
 #include <sourcemeta/blaze/foundation.h>
-#include <sourcemeta/blaze/frame.h>
 #include <sourcemeta/core/regex.h>
 #include <sourcemeta/core/uri.h>
 
@@ -32,7 +31,7 @@ namespace sourcemeta::blaze {
 auto handle_impossible(const sourcemeta::core::JSON &,
                        const sourcemeta::blaze::SchemaFrame &frame,
                        const sourcemeta::blaze::SchemaFrame::Location &location,
-                       const sourcemeta::blaze::Vocabularies &,
+                       const sourcemeta::blaze::SchemaVocabularies &,
                        const sourcemeta::blaze::SchemaResolver &,
                        const sourcemeta::core::JSON &) -> CodegenIRImpossible {
   return CodegenIRImpossible{
@@ -43,7 +42,7 @@ auto handle_impossible(const sourcemeta::core::JSON &,
 auto handle_any(const sourcemeta::core::JSON &,
                 const sourcemeta::blaze::SchemaFrame &frame,
                 const sourcemeta::blaze::SchemaFrame::Location &location,
-                const sourcemeta::blaze::Vocabularies &,
+                const sourcemeta::blaze::SchemaVocabularies &,
                 const sourcemeta::blaze::SchemaResolver &,
                 const sourcemeta::core::JSON &) -> CodegenIRAny {
   return CodegenIRAny{
@@ -54,7 +53,7 @@ auto handle_any(const sourcemeta::core::JSON &,
 auto handle_string(const sourcemeta::core::JSON &schema,
                    const sourcemeta::blaze::SchemaFrame &frame,
                    const sourcemeta::blaze::SchemaFrame::Location &location,
-                   const sourcemeta::blaze::Vocabularies &,
+                   const sourcemeta::blaze::SchemaVocabularies &,
                    const sourcemeta::blaze::SchemaResolver &,
                    const sourcemeta::core::JSON &subschema) -> CodegenIRScalar {
   ONLY_WHITELIST_KEYWORDS(schema, subschema, location.pointer,
@@ -88,7 +87,7 @@ auto handle_string(const sourcemeta::core::JSON &schema,
 auto handle_object(const sourcemeta::core::JSON &schema,
                    const sourcemeta::blaze::SchemaFrame &frame,
                    const sourcemeta::blaze::SchemaFrame::Location &location,
-                   const sourcemeta::blaze::Vocabularies &,
+                   const sourcemeta::blaze::SchemaVocabularies &,
                    const sourcemeta::blaze::SchemaResolver &,
                    const sourcemeta::core::JSON &subschema) -> CodegenIRObject {
   ONLY_WHITELIST_KEYWORDS(
@@ -110,13 +109,34 @@ auto handle_object(const sourcemeta::core::JSON &schema,
   assert(subschema.defines("properties"));
 
   const auto &properties{subschema.at("properties")};
+  if (!properties.is_object()) {
+    throw CodegenUnsupportedKeywordValueError(
+        schema, location.pointer, "properties", "Expected an object value");
+  }
 
   std::unordered_set<std::string_view> required_set;
   if (subschema.defines("required")) {
     const auto &required{subschema.at("required")};
+    if (!required.is_array()) {
+      throw CodegenUnsupportedKeywordValueError(
+          schema, location.pointer, "required", "Expected an array value");
+    }
+
     for (const auto &item : required.as_array()) {
-      // Guaranteed by canonicalisation
-      assert(properties.defines(item.to_string()));
+      if (!item.is_string()) {
+        throw CodegenUnsupportedKeywordValueError(
+            schema, location.pointer, "required",
+            "Expected an array of string values");
+      }
+
+      // Canonicalisation adds a required property that the schema leaves
+      // unconstrained, but it cannot do so for an object that forbids it
+      if (!properties.defines(item.to_string())) {
+        throw CodegenUnexpectedSchemaError(
+            schema, location.pointer,
+            "This schema requires a property that it does not allow");
+      }
+
       required_set.insert(item.to_string());
     }
   }
@@ -161,6 +181,12 @@ auto handle_object(const sourcemeta::core::JSON &schema,
   std::vector<CodegenIRObjectPatternProperty> pattern;
   if (subschema.defines("patternProperties")) {
     const auto &pattern_props{subschema.at("patternProperties")};
+    if (!pattern_props.is_object()) {
+      throw CodegenUnsupportedKeywordValueError(schema, location.pointer,
+                                                "patternProperties",
+                                                "Expected an object value");
+    }
+
     for (const auto &entry : pattern_props.as_object()) {
       auto pattern_pointer{sourcemeta::core::to_pointer(location.pointer)};
       pattern_pointer.push_back("patternProperties");
@@ -196,7 +222,7 @@ auto handle_object(const sourcemeta::core::JSON &schema,
 auto handle_integer(const sourcemeta::core::JSON &schema,
                     const sourcemeta::blaze::SchemaFrame &frame,
                     const sourcemeta::blaze::SchemaFrame::Location &location,
-                    const sourcemeta::blaze::Vocabularies &,
+                    const sourcemeta::blaze::SchemaVocabularies &,
                     const sourcemeta::blaze::SchemaResolver &,
                     const sourcemeta::core::JSON &subschema)
     -> CodegenIRScalar {
@@ -215,7 +241,7 @@ auto handle_integer(const sourcemeta::core::JSON &schema,
 auto handle_number(const sourcemeta::core::JSON &schema,
                    const sourcemeta::blaze::SchemaFrame &frame,
                    const sourcemeta::blaze::SchemaFrame::Location &location,
-                   const sourcemeta::blaze::Vocabularies &,
+                   const sourcemeta::blaze::SchemaVocabularies &,
                    const sourcemeta::blaze::SchemaResolver &,
                    const sourcemeta::core::JSON &subschema) -> CodegenIRScalar {
   ONLY_WHITELIST_KEYWORDS(schema, subschema, location.pointer,
@@ -233,7 +259,7 @@ auto handle_number(const sourcemeta::core::JSON &schema,
 auto handle_array(const sourcemeta::core::JSON &schema,
                   const sourcemeta::blaze::SchemaFrame &frame,
                   const sourcemeta::blaze::SchemaFrame::Location &location,
-                  const sourcemeta::blaze::Vocabularies &vocabularies,
+                  const sourcemeta::blaze::SchemaVocabularies &vocabularies,
                   const sourcemeta::blaze::SchemaResolver &,
                   const sourcemeta::core::JSON &subschema) -> CodegenIREntity {
   ONLY_WHITELIST_KEYWORDS(schema, subschema, location.pointer,
@@ -247,10 +273,13 @@ auto handle_array(const sourcemeta::core::JSON &schema,
                            "writeOnly",      "examples"});
 
   if (vocabularies.contains(
-          Vocabularies::Known::JSON_Schema_2020_12_Applicator) &&
+          SchemaVocabularies::Known::JSON_Schema_2020_12_Applicator) &&
       subschema.defines("prefixItems")) {
     const auto &prefix_items{subschema.at("prefixItems")};
-    assert(prefix_items.is_array());
+    if (!prefix_items.is_array()) {
+      throw CodegenUnsupportedKeywordValueError(
+          schema, location.pointer, "prefixItems", "Expected an array value");
+    }
 
     std::vector<CodegenIRType> tuple_items;
     for (std::size_t index = 0; index < prefix_items.size(); ++index) {
@@ -289,11 +318,11 @@ auto handle_array(const sourcemeta::core::JSON &schema,
   }
 
   if (vocabularies.contains_any(
-          {Vocabularies::Known::JSON_Schema_2019_09_Applicator,
-           Vocabularies::Known::JSON_Schema_Draft_7,
-           Vocabularies::Known::JSON_Schema_Draft_6,
-           Vocabularies::Known::JSON_Schema_Draft_4,
-           Vocabularies::Known::JSON_Schema_Draft_3}) &&
+          {SchemaVocabularies::Known::JSON_Schema_2019_09_Applicator,
+           SchemaVocabularies::Known::JSON_Schema_Draft_7,
+           SchemaVocabularies::Known::JSON_Schema_Draft_6,
+           SchemaVocabularies::Known::JSON_Schema_Draft_4,
+           SchemaVocabularies::Known::JSON_Schema_Draft_3}) &&
       subschema.defines("items") && subschema.at("items").is_array()) {
     const auto &items_array{subschema.at("items")};
 
@@ -356,7 +385,7 @@ auto handle_array(const sourcemeta::core::JSON &schema,
 auto handle_enum(const sourcemeta::core::JSON &schema,
                  const sourcemeta::blaze::SchemaFrame &frame,
                  const sourcemeta::blaze::SchemaFrame::Location &location,
-                 const sourcemeta::blaze::Vocabularies &,
+                 const sourcemeta::blaze::SchemaVocabularies &,
                  const sourcemeta::blaze::SchemaResolver &,
                  const sourcemeta::core::JSON &subschema) -> CodegenIREntity {
   ONLY_WHITELIST_KEYWORDS(schema, subschema, location.pointer,
@@ -365,6 +394,10 @@ auto handle_enum(const sourcemeta::core::JSON &schema,
                            "description", "default", "deprecated", "readOnly",
                            "writeOnly", "examples"});
   const auto &enum_json{subschema.at("enum")};
+  if (!enum_json.is_array()) {
+    throw CodegenUnsupportedKeywordValueError(schema, location.pointer, "enum",
+                                              "Expected an array value");
+  }
 
   // Boolean and null special cases
   if (enum_json.size() == 1 && enum_json.at(0).is_null()) {
@@ -395,7 +428,7 @@ auto handle_enum(const sourcemeta::core::JSON &schema,
 auto handle_anyof(const sourcemeta::core::JSON &schema,
                   const sourcemeta::blaze::SchemaFrame &frame,
                   const sourcemeta::blaze::SchemaFrame::Location &location,
-                  const sourcemeta::blaze::Vocabularies &,
+                  const sourcemeta::blaze::SchemaVocabularies &,
                   const sourcemeta::blaze::SchemaResolver &,
                   const sourcemeta::core::JSON &subschema) -> CodegenIREntity {
   ONLY_WHITELIST_KEYWORDS(
@@ -405,7 +438,12 @@ auto handle_anyof(const sourcemeta::core::JSON &schema,
        "writeOnly", "examples", "unevaluatedProperties", "unevaluatedItems"});
 
   const auto &any_of{subschema.at("anyOf")};
-  assert(any_of.is_array());
+  if (!any_of.is_array() || any_of.empty()) {
+    throw CodegenUnsupportedKeywordValueError(
+        schema, location.pointer, "anyOf", "Expected a non-empty array value");
+  }
+
+  // Canonicalisation merges a single branch into its parent
   assert(any_of.size() >= 2);
 
   std::vector<CodegenIRType> branches;
@@ -432,7 +470,7 @@ auto handle_anyof(const sourcemeta::core::JSON &schema,
 auto handle_oneof(const sourcemeta::core::JSON &schema,
                   const sourcemeta::blaze::SchemaFrame &frame,
                   const sourcemeta::blaze::SchemaFrame::Location &location,
-                  const sourcemeta::blaze::Vocabularies &,
+                  const sourcemeta::blaze::SchemaVocabularies &,
                   const sourcemeta::blaze::SchemaResolver &,
                   const sourcemeta::core::JSON &subschema) -> CodegenIREntity {
   ONLY_WHITELIST_KEYWORDS(
@@ -442,7 +480,12 @@ auto handle_oneof(const sourcemeta::core::JSON &schema,
        "writeOnly", "examples", "unevaluatedProperties", "unevaluatedItems"});
 
   const auto &one_of{subschema.at("oneOf")};
-  assert(one_of.is_array());
+  if (!one_of.is_array() || one_of.empty()) {
+    throw CodegenUnsupportedKeywordValueError(
+        schema, location.pointer, "oneOf", "Expected a non-empty array value");
+  }
+
+  // Canonicalisation merges a single branch into its parent
   assert(one_of.size() >= 2);
 
   std::vector<CodegenIRType> branches;
@@ -469,7 +512,7 @@ auto handle_oneof(const sourcemeta::core::JSON &schema,
 auto handle_ref(const sourcemeta::core::JSON &schema,
                 const sourcemeta::blaze::SchemaFrame &frame,
                 const sourcemeta::blaze::SchemaFrame::Location &location,
-                const sourcemeta::blaze::Vocabularies &,
+                const sourcemeta::blaze::SchemaVocabularies &,
                 const sourcemeta::blaze::SchemaResolver &,
                 const sourcemeta::core::JSON &subschema) -> CodegenIREntity {
   ONLY_WHITELIST_KEYWORDS(schema, subschema, location.pointer,
@@ -482,12 +525,11 @@ auto handle_ref(const sourcemeta::core::JSON &schema,
   ref_pointer.push_back("$ref");
   const auto ref_weak_pointer{sourcemeta::core::to_weak_pointer(ref_pointer)};
 
-  const auto &references{frame.references()};
-  const auto reference{references.find(
-      {sourcemeta::blaze::SchemaReferenceType::Static, ref_weak_pointer})};
-  assert(reference != references.cend());
+  const auto reference{frame.reference(
+      sourcemeta::blaze::SchemaReferenceType::Static, ref_weak_pointer)};
+  assert(reference.has_value());
 
-  const auto &destination{reference->second.destination};
+  const auto &destination{reference.value().get().destination};
   const auto target{frame.traverse(destination)};
   if (!target.has_value()) {
     throw CodegenUnexpectedSchemaError(
@@ -507,7 +549,7 @@ auto handle_dynamic_ref(
     const sourcemeta::core::JSON &schema,
     const sourcemeta::blaze::SchemaFrame &frame,
     const sourcemeta::blaze::SchemaFrame::Location &location,
-    const sourcemeta::blaze::Vocabularies &,
+    const sourcemeta::blaze::SchemaVocabularies &,
     const sourcemeta::blaze::SchemaResolver &,
     const sourcemeta::core::JSON &subschema) -> CodegenIREntity {
   ONLY_WHITELIST_KEYWORDS(schema, subschema, location.pointer,
@@ -520,14 +562,12 @@ auto handle_dynamic_ref(
   ref_pointer.push_back("$dynamicRef");
   const auto ref_weak_pointer{sourcemeta::core::to_weak_pointer(ref_pointer)};
 
-  const auto &references{frame.references()};
-
   // Note: The frame internally converts single-target dynamic references to
   // static reference
-  const auto static_reference{references.find(
-      {sourcemeta::blaze::SchemaReferenceType::Static, ref_weak_pointer})};
-  if (static_reference != references.cend()) {
-    const auto &destination{static_reference->second.destination};
+  const auto static_reference{frame.reference(
+      sourcemeta::blaze::SchemaReferenceType::Static, ref_weak_pointer)};
+  if (static_reference.has_value()) {
+    const auto &destination{static_reference.value().get().destination};
     const auto target{frame.traverse(destination)};
     if (!target.has_value()) {
       throw CodegenUnexpectedSchemaError(
@@ -545,28 +585,29 @@ auto handle_dynamic_ref(
 
   // Multi-target dynamic reference: find all dynamic anchors with the matching
   // fragment and emit a union of all possible targets
-  const auto dynamic_reference{references.find(
-      {sourcemeta::blaze::SchemaReferenceType::Dynamic, ref_weak_pointer})};
-  assert(dynamic_reference != references.cend());
-  assert(dynamic_reference->second.fragment.has_value());
-  const auto &fragment{dynamic_reference->second.fragment.value()};
+  const auto dynamic_reference{frame.reference(
+      sourcemeta::blaze::SchemaReferenceType::Dynamic, ref_weak_pointer)};
+  assert(dynamic_reference.has_value());
+  assert(dynamic_reference.value().get().fragment.has_value());
+  const auto &fragment{dynamic_reference.value().get().fragment.value()};
 
   std::vector<CodegenIRType> branches;
-  for (const auto &[key, entry] : frame.locations()) {
-    if (key.first != sourcemeta::blaze::SchemaReferenceType::Dynamic ||
-        entry.type != sourcemeta::blaze::SchemaFrame::LocationType::Anchor) {
-      continue;
-    }
+  frame.for_each_anchor(
+      sourcemeta::blaze::SchemaReferenceType::Dynamic,
+      [&](const std::string_view uri,
+          const sourcemeta::blaze::SchemaFrame::Location &entry) -> void {
+        const sourcemeta::core::URI anchor_uri{
+            sourcemeta::core::JSON::String{uri}};
+        const auto anchor_fragment{anchor_uri.fragment()};
+        if (!anchor_fragment.has_value() ||
+            anchor_fragment.value() != fragment) {
+          return;
+        }
 
-    const sourcemeta::core::URI anchor_uri{key.second};
-    const auto anchor_fragment{anchor_uri.fragment()};
-    if (!anchor_fragment.has_value() || anchor_fragment.value() != fragment) {
-      continue;
-    }
-
-    branches.push_back({.pointer = sourcemeta::core::to_pointer(entry.pointer),
-                        .symbol = symbol(frame, entry)});
-  }
+        branches.push_back(
+            {.pointer = sourcemeta::core::to_pointer(entry.pointer),
+             .symbol = symbol(frame, entry)});
+      });
 
   assert(!branches.empty());
   return CodegenIRUnion{
@@ -578,7 +619,7 @@ auto handle_dynamic_ref(
 auto handle_allof(const sourcemeta::core::JSON &schema,
                   const sourcemeta::blaze::SchemaFrame &frame,
                   const sourcemeta::blaze::SchemaFrame::Location &location,
-                  const sourcemeta::blaze::Vocabularies &,
+                  const sourcemeta::blaze::SchemaVocabularies &,
                   const sourcemeta::blaze::SchemaResolver &,
                   const sourcemeta::core::JSON &subschema) -> CodegenIREntity {
   ONLY_WHITELIST_KEYWORDS(
@@ -588,7 +629,10 @@ auto handle_allof(const sourcemeta::core::JSON &schema,
        "writeOnly", "examples", "unevaluatedProperties", "unevaluatedItems"});
 
   const auto &all_of{subschema.at("allOf")};
-  assert(all_of.is_array());
+  if (!all_of.is_array() || all_of.empty()) {
+    throw CodegenUnsupportedKeywordValueError(
+        schema, location.pointer, "allOf", "Expected a non-empty array value");
+  }
 
   if (all_of.size() == 1) {
     auto target_pointer{sourcemeta::core::to_pointer(location.pointer)};
@@ -631,7 +675,7 @@ auto handle_if_then_else(
     const sourcemeta::core::JSON &schema,
     const sourcemeta::blaze::SchemaFrame &frame,
     const sourcemeta::blaze::SchemaFrame::Location &location,
-    const sourcemeta::blaze::Vocabularies &,
+    const sourcemeta::blaze::SchemaVocabularies &,
     const sourcemeta::blaze::SchemaResolver &,
     const sourcemeta::core::JSON &subschema) -> CodegenIREntity {
   ONLY_WHITELIST_KEYWORDS(schema, subschema, location.pointer,
@@ -684,24 +728,24 @@ auto default_compiler(const sourcemeta::core::JSON &schema,
   assert(!vocabularies.empty());
 
   // Be strict with vocabulary support
-  static const std::unordered_set<Vocabularies::URI> supported{
-      Vocabularies::Known::JSON_Schema_2020_12_Core,
-      Vocabularies::Known::JSON_Schema_2020_12_Applicator,
-      Vocabularies::Known::JSON_Schema_2020_12_Validation,
-      Vocabularies::Known::JSON_Schema_2020_12_Unevaluated,
-      Vocabularies::Known::JSON_Schema_2020_12_Content,
-      Vocabularies::Known::JSON_Schema_2020_12_Meta_Data,
-      Vocabularies::Known::JSON_Schema_2020_12_Format_Annotation,
-      Vocabularies::Known::JSON_Schema_2020_12_Format_Assertion,
-      Vocabularies::Known::JSON_Schema_2019_09_Core,
-      Vocabularies::Known::JSON_Schema_2019_09_Applicator,
-      Vocabularies::Known::JSON_Schema_2019_09_Validation,
-      Vocabularies::Known::JSON_Schema_2019_09_Content,
-      Vocabularies::Known::JSON_Schema_2019_09_Meta_Data,
-      Vocabularies::Known::JSON_Schema_2019_09_Format,
-      Vocabularies::Known::JSON_Schema_Draft_7,
-      Vocabularies::Known::JSON_Schema_Draft_6,
-      Vocabularies::Known::JSON_Schema_Draft_4};
+  static const std::unordered_set<SchemaVocabularies::URI> supported{
+      SchemaVocabularies::Known::JSON_Schema_2020_12_Core,
+      SchemaVocabularies::Known::JSON_Schema_2020_12_Applicator,
+      SchemaVocabularies::Known::JSON_Schema_2020_12_Validation,
+      SchemaVocabularies::Known::JSON_Schema_2020_12_Unevaluated,
+      SchemaVocabularies::Known::JSON_Schema_2020_12_Content,
+      SchemaVocabularies::Known::JSON_Schema_2020_12_Meta_Data,
+      SchemaVocabularies::Known::JSON_Schema_2020_12_Format_Annotation,
+      SchemaVocabularies::Known::JSON_Schema_2020_12_Format_Assertion,
+      SchemaVocabularies::Known::JSON_Schema_2019_09_Core,
+      SchemaVocabularies::Known::JSON_Schema_2019_09_Applicator,
+      SchemaVocabularies::Known::JSON_Schema_2019_09_Validation,
+      SchemaVocabularies::Known::JSON_Schema_2019_09_Content,
+      SchemaVocabularies::Known::JSON_Schema_2019_09_Meta_Data,
+      SchemaVocabularies::Known::JSON_Schema_2019_09_Format,
+      SchemaVocabularies::Known::JSON_Schema_Draft_7,
+      SchemaVocabularies::Known::JSON_Schema_Draft_6,
+      SchemaVocabularies::Known::JSON_Schema_Draft_4};
   vocabularies.throw_if_any_unsupported(supported,
                                         "Unsupported required vocabulary");
 

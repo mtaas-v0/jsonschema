@@ -11,7 +11,13 @@ jsonschema metaschema [schemas-or-directories...]
   [--resolve/-r <schemas-or-directories> ...]
   [--ignore/-i <schemas-or-directories>] [--trace/-t]
   [--default-dialect/-d <uri>] [--json/-j] [--format-assertion/-F]
+  [--configuration/-C <path>]
 ```
+
+> [!NOTE]
+> See [Resolving External References](./guides/resolution.markdown) for every way of
+> making referenced schemas available, including how to handle a reference whose
+> URI differs from the identifier the target schema declares.
 
 Ensure that a schema or a set of schemas are considered valid with regards to
 their metaschemas. The `--json`/`-j` option outputs the evaluation result using

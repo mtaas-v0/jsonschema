@@ -12,8 +12,13 @@ jsonschema validate <schema.json|.yaml> <instance.json|.jsonl|.jsonl.gz|.yaml|di
   [--benchmark/-b] [--loop <iterations>] [--extension/-e <extension>]
   [--ignore/-i <schemas-or-directories>] [--trace/-t] [--fast/-f]
   [--template/-m <template.json>] [--json/-j] [--entrypoint/-p <pointer|uri>]
-  [--continue/-c] [--format-assertion/-F]
+  [--continue/-c] [--format-assertion/-F] [--configuration/-C <path>]
 ```
+
+> [!NOTE]
+> See [Resolving External References](./guides/resolution.markdown) for every way of
+> making referenced schemas available, including how to handle a reference whose
+> URI differs from the identifier the target schema declares.
 
 The most popular use case of JSON Schema is to validate JSON documents. The
 JSON Schema CLI offers a `validate` command to evaluate one or many JSON
@@ -41,9 +46,9 @@ code 2.
 > during validation. No additional options are needed.
 
 > [!NOTE]
-> Annotations are only printed when passing the `--verbose`/`-v` or the
-> `--trace`/`-t` options. However, annotation collection will be skipped if the
-> `--fast`/`-f` option is passed.
+> Annotations are reported through the `--json`/`-j` output and through the
+> `--trace`/`-t` option. Neither reports them when the `--fast`/`-f` option is
+> passed, as fast mode does not collect annotations.
 
 > [!WARNING]
 > By default, schemas are validated in exhaustive mode, which results in better

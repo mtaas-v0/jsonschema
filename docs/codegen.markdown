@@ -5,8 +5,13 @@ Codegen
 jsonschema codegen <schema.json|.yaml> --target/-t <target> [--name/-n <name>]
   [--json/-j] [--verbose/-v] [--debug/-g]
   [--resolve/-r <schemas-or-directories>]
-  [--default-dialect/-d <uri>]
+  [--default-dialect/-d <uri>] [--configuration/-C <path>]
 ```
+
+> [!NOTE]
+> See [Resolving External References](./guides/resolution.markdown) for every way of
+> making referenced schemas available, including how to handle a reference whose
+> URI differs from the identifier the target schema declares.
 
 JSON Schema is a declarative language for defining the structure of JSON data.
 The JSON Schema CLI offers a `codegen` command that generates type definitions

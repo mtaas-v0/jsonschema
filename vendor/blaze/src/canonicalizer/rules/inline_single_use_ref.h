@@ -6,7 +6,7 @@ public:
   [[nodiscard]] auto
   condition(const sourcemeta::core::JSON &schema,
             const sourcemeta::core::JSON &root,
-            const sourcemeta::blaze::Vocabularies &vocabularies,
+            const sourcemeta::blaze::SchemaVocabularies &vocabularies,
             const sourcemeta::blaze::SchemaFrame &frame,
             const sourcemeta::blaze::SchemaFrame::Location &location,
             const sourcemeta::blaze::SchemaWalker &,
@@ -46,11 +46,11 @@ public:
     }
 
     ONLY_CONTINUE_IF(vocabularies.contains_any(
-        {Vocabularies::Known::JSON_Schema_2020_12_Core,
-         Vocabularies::Known::JSON_Schema_2019_09_Core,
-         Vocabularies::Known::JSON_Schema_Draft_7,
-         Vocabularies::Known::JSON_Schema_Draft_6,
-         Vocabularies::Known::JSON_Schema_Draft_4}));
+        {SchemaVocabularies::Known::JSON_Schema_2020_12_Core,
+         SchemaVocabularies::Known::JSON_Schema_2019_09_Core,
+         SchemaVocabularies::Known::JSON_Schema_Draft_7,
+         SchemaVocabularies::Known::JSON_Schema_Draft_6,
+         SchemaVocabularies::Known::JSON_Schema_Draft_4}));
 
     const auto target{frame.traverse(ref->to_string())};
     ONLY_CONTINUE_IF(target.has_value());
@@ -63,16 +63,21 @@ public:
     ONLY_CONTINUE_IF(container == "definitions" || container == "$defs");
 
     std::size_t ref_count{0};
-    for (const auto &reference : frame.references()) {
-      const auto dest{frame.traverse(reference.second.destination)};
-      if (!dest.has_value()) {
-        continue;
-      }
-      if (dest->get().pointer.starts_with(target_pointer) ||
-          target_pointer.starts_with(dest->get().pointer)) {
-        ++ref_count;
-      }
-    }
+    frame.for_each_reference(
+        [&](const sourcemeta::blaze::SchemaReferenceType,
+            const sourcemeta::core::WeakPointer &,
+            const sourcemeta::blaze::SchemaFrame::Reference &reference)
+            -> void {
+          const auto dest{frame.traverse(reference.destination)};
+          if (!dest.has_value()) {
+            return;
+          }
+
+          if (dest->get().pointer.starts_with(target_pointer) ||
+              target_pointer.starts_with(dest->get().pointer)) {
+            ++ref_count;
+          }
+        });
 
     ONLY_CONTINUE_IF(ref_count == 1);
 

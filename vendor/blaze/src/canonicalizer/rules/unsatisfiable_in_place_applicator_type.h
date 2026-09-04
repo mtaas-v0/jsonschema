@@ -7,23 +7,23 @@ public:
   [[nodiscard]] auto
   condition(const sourcemeta::core::JSON &schema,
             const sourcemeta::core::JSON &,
-            const sourcemeta::blaze::Vocabularies &vocabularies,
+            const sourcemeta::blaze::SchemaVocabularies &vocabularies,
             const sourcemeta::blaze::SchemaFrame &,
             const sourcemeta::blaze::SchemaFrame::Location &,
             const sourcemeta::blaze::SchemaWalker &walker,
             const sourcemeta::blaze::SchemaResolver &) const -> bool override {
     ONLY_CONTINUE_IF(schema.is_object() && schema.defines("type"));
     ONLY_CONTINUE_IF(vocabularies.contains_any(
-        {Vocabularies::Known::JSON_Schema_2020_12_Validation,
-         Vocabularies::Known::JSON_Schema_2019_09_Validation,
-         Vocabularies::Known::JSON_Schema_Draft_7,
-         Vocabularies::Known::JSON_Schema_Draft_6,
-         Vocabularies::Known::JSON_Schema_Draft_4,
-         Vocabularies::Known::JSON_Schema_Draft_3,
-         Vocabularies::Known::JSON_Schema_Draft_3_Hyper,
-         Vocabularies::Known::JSON_Schema_Draft_2,
-         Vocabularies::Known::JSON_Schema_Draft_1,
-         Vocabularies::Known::JSON_Schema_Draft_0}));
+        {SchemaVocabularies::Known::JSON_Schema_2020_12_Validation,
+         SchemaVocabularies::Known::JSON_Schema_2019_09_Validation,
+         SchemaVocabularies::Known::JSON_Schema_Draft_7,
+         SchemaVocabularies::Known::JSON_Schema_Draft_6,
+         SchemaVocabularies::Known::JSON_Schema_Draft_4,
+         SchemaVocabularies::Known::JSON_Schema_Draft_3,
+         SchemaVocabularies::Known::JSON_Schema_Draft_3_Hyper,
+         SchemaVocabularies::Known::JSON_Schema_Draft_2,
+         SchemaVocabularies::Known::JSON_Schema_Draft_1,
+         SchemaVocabularies::Known::JSON_Schema_Draft_0}));
     ONLY_CONTINUE_IF(IS_KNOWN_TYPE_FORM(schema.at("type"), vocabularies));
     const auto parent_types{parse_schema_type(schema.at("type"))};
     ONLY_CONTINUE_IF(parent_types.any());
@@ -77,6 +77,7 @@ public:
 
     ONLY_CONTINUE_IF(!locations.empty());
     this->locations_ = std::move(locations);
+    this->unsatisfiable_ = UNSATISFIABLE_SCHEMA(vocabularies);
     return true;
   }
 
@@ -85,15 +86,16 @@ public:
       if (location.size() == 2) {
         const auto &keyword{location.at(0).to_property()};
         const auto index{location.at(1).to_index()};
-        schema.at(keyword).at(index).into(sourcemeta::core::JSON{false});
+        INTO_UNSATISFIABLE(schema.at(keyword).at(index), this->unsatisfiable_);
       } else {
         assert(location.size() == 1);
         const auto &keyword{location.at(0).to_property()};
-        schema.at(keyword).into(sourcemeta::core::JSON{false});
+        INTO_UNSATISFIABLE(schema.at(keyword), this->unsatisfiable_);
       }
     }
   }
 
 private:
   mutable std::vector<sourcemeta::core::Pointer> locations_;
+  mutable sourcemeta::core::JSON unsatisfiable_{false};
 };

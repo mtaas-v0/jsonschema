@@ -7,18 +7,18 @@ public:
   [[nodiscard]] auto
   condition(const sourcemeta::core::JSON &schema,
             const sourcemeta::core::JSON &,
-            const sourcemeta::blaze::Vocabularies &vocabularies,
+            const sourcemeta::blaze::SchemaVocabularies &vocabularies,
             const sourcemeta::blaze::SchemaFrame &frame,
             const sourcemeta::blaze::SchemaFrame::Location &location,
             const sourcemeta::blaze::SchemaWalker &walker,
             const sourcemeta::blaze::SchemaResolver &) const -> bool override {
     ONLY_CONTINUE_IF(
         vocabularies.contains_any(
-            {Vocabularies::Known::JSON_Schema_Draft_4,
-             Vocabularies::Known::JSON_Schema_Draft_6,
-             Vocabularies::Known::JSON_Schema_Draft_7,
-             Vocabularies::Known::JSON_Schema_2019_09_Applicator,
-             Vocabularies::Known::JSON_Schema_2020_12_Applicator}) &&
+            {SchemaVocabularies::Known::JSON_Schema_Draft_4,
+             SchemaVocabularies::Known::JSON_Schema_Draft_6,
+             SchemaVocabularies::Known::JSON_Schema_Draft_7,
+             SchemaVocabularies::Known::JSON_Schema_2019_09_Applicator,
+             SchemaVocabularies::Known::JSON_Schema_2020_12_Applicator}) &&
         schema.is_object());
 
     const bool has_not{schema.defines("not")};
@@ -27,24 +27,28 @@ public:
     const bool has_oneof{schema.defines("oneOf")};
     const bool has_if{
         vocabularies.contains_any(
-            {Vocabularies::Known::JSON_Schema_Draft_7,
-             Vocabularies::Known::JSON_Schema_2019_09_Applicator,
-             Vocabularies::Known::JSON_Schema_2020_12_Applicator}) &&
+            {SchemaVocabularies::Known::JSON_Schema_Draft_7,
+             SchemaVocabularies::Known::JSON_Schema_2019_09_Applicator,
+             SchemaVocabularies::Known::JSON_Schema_2020_12_Applicator}) &&
         schema.defines("if")};
     this->has_if_then_else_ = has_if;
     const auto *type_value{schema.try_at("type")};
     const bool has_type{type_value && type_value->is_string()};
     const bool has_enum{schema.defines("enum")};
     const bool is_modern{
-        vocabularies.contains(Vocabularies::Known::JSON_Schema_2019_09_Core) ||
-        vocabularies.contains(Vocabularies::Known::JSON_Schema_2020_12_Core)};
+        vocabularies.contains(
+            SchemaVocabularies::Known::JSON_Schema_2019_09_Core) ||
+        vocabularies.contains(
+            SchemaVocabularies::Known::JSON_Schema_2020_12_Core)};
     const bool has_ref{!is_modern && schema.defines("$ref")};
     this->has_modern_ref_ = is_modern && schema.defines("$ref");
     this->has_dynamic_ref_ =
-        vocabularies.contains(Vocabularies::Known::JSON_Schema_2020_12_Core) &&
+        vocabularies.contains(
+            SchemaVocabularies::Known::JSON_Schema_2020_12_Core) &&
         schema.defines("$dynamicRef");
     this->has_recursive_ref_ =
-        vocabularies.contains(Vocabularies::Known::JSON_Schema_2019_09_Core) &&
+        vocabularies.contains(
+            SchemaVocabularies::Known::JSON_Schema_2019_09_Core) &&
         schema.defines("$recursiveRef");
     const unsigned int applicator_count{
         (has_not ? 1U : 0U) + (has_anyof ? 1U : 0U) + (has_allof ? 1U : 0U) +
@@ -80,8 +84,8 @@ public:
 
     this->has_unevaluated_ =
         vocabularies.contains_any(
-            {Vocabularies::Known::JSON_Schema_2020_12_Unevaluated,
-             Vocabularies::Known::JSON_Schema_2019_09_Applicator}) &&
+            {SchemaVocabularies::Known::JSON_Schema_2020_12_Unevaluated,
+             SchemaVocabularies::Known::JSON_Schema_2019_09_Applicator}) &&
         (schema.defines("unevaluatedProperties") ||
          schema.defines("unevaluatedItems"));
     bool has_orphaned_typed_keywords{false};
@@ -106,22 +110,30 @@ public:
 
     this->strategy_ = Strategy::FullRestructure;
     this->applicators_with_refs_ = 0;
-    for (const auto &reference : frame.references()) {
-      const auto &source_pointer{reference.first.second};
-      if (!source_pointer.starts_with(location.pointer)) {
-        continue;
-      }
-      const auto relative{source_pointer.resolve_from(location.pointer)};
-      if (relative.empty() || !relative.at(0).is_property()) {
-        continue;
-      }
-      const auto &first_keyword{relative.at(0).to_property()};
-      const auto bit{applicator_bit(first_keyword)};
-      if (bit != 0) {
-        const auto destination{frame.traverse(reference.second.destination)};
-        if (destination.has_value()) {
-          const auto &dest_pointer{destination->get().pointer};
-          if (dest_pointer.starts_with(location.pointer)) {
+    frame.for_each_reference_from(
+        location.pointer,
+        [&](const sourcemeta::blaze::SchemaReferenceType,
+            const sourcemeta::core::WeakPointer &source_pointer,
+            const sourcemeta::blaze::SchemaFrame::Reference &reference)
+            -> void {
+          const auto relative{source_pointer.resolve_from(location.pointer)};
+          if (relative.empty() || !relative.at(0).is_property()) {
+            return;
+          }
+
+          const auto &first_keyword{relative.at(0).to_property()};
+          const auto bit{applicator_bit(first_keyword)};
+          if (bit == 0) {
+            return;
+          }
+
+          const auto destination{frame.traverse(reference.destination)};
+          if (destination.has_value()) {
+            const auto &dest_pointer{destination->get().pointer};
+            if (!dest_pointer.starts_with(location.pointer)) {
+              return;
+            }
+
             const auto relative_dest{
                 dest_pointer.resolve_from(location.pointer)};
             if (!relative_dest.empty() && relative_dest.at(0).is_property() &&
@@ -129,16 +141,13 @@ public:
                  relative_dest.at(0).to_property() == "$defs" ||
                  relative_dest.at(0).to_property() == "dependencies" ||
                  relative_dest.at(0).to_property() == "dependentSchemas")) {
-              continue;
+              return;
             }
-          } else {
-            continue;
           }
-        }
-        this->strategy_ = Strategy::SafeExtract;
-        this->applicators_with_refs_ |= bit;
-      }
-    }
+
+          this->strategy_ = Strategy::SafeExtract;
+          this->applicators_with_refs_ |= bit;
+        });
 
     if (this->strategy_ == Strategy::SafeExtract && !has_structural) {
       if (!has_allof) {
@@ -146,39 +155,38 @@ public:
         return true;
       }
 
-      bool all_refs_fixed{true};
-      for (const auto &reference : frame.references()) {
-        const auto &source_pointer{reference.first.second};
-        if (!source_pointer.starts_with(location.pointer)) {
-          continue;
-        }
-        const auto relative_src{source_pointer.resolve_from(location.pointer)};
-        if (relative_src.empty() || !relative_src.at(0).is_property()) {
-          continue;
-        }
-        const auto &src_keyword{relative_src.at(0).to_property()};
-        if (src_keyword != "not" && src_keyword != "anyOf" &&
-            src_keyword != "oneOf" &&
-            !(this->has_if_then_else_ &&
-              (src_keyword == "if" || src_keyword == "then" ||
-               src_keyword == "else"))) {
-          continue;
-        }
+      const auto all_refs_fixed{!frame.any_reference_from(
+          location.pointer,
+          [&](const sourcemeta::blaze::SchemaReferenceType,
+              const sourcemeta::core::WeakPointer &source_pointer,
+              const sourcemeta::blaze::SchemaFrame::Reference &reference)
+              -> bool {
+            const auto relative_src{
+                source_pointer.resolve_from(location.pointer)};
+            if (relative_src.empty() || !relative_src.at(0).is_property()) {
+              return false;
+            }
 
-        const auto destination{frame.traverse(reference.second.destination)};
-        if (!destination.has_value()) {
-          all_refs_fixed = false;
-          break;
-        }
+            const auto &src_keyword{relative_src.at(0).to_property()};
+            if (src_keyword != "not" && src_keyword != "anyOf" &&
+                src_keyword != "oneOf" &&
+                !(this->has_if_then_else_ &&
+                  (src_keyword == "if" || src_keyword == "then" ||
+                   src_keyword == "else"))) {
+              return false;
+            }
 
-        const auto relative_dest{
-            destination->get().pointer.resolve_from(location.pointer)};
-        if (relative_dest.empty() || !relative_dest.at(0).is_property() ||
-            relative_dest.at(0).to_property() != "allOf") {
-          all_refs_fixed = false;
-          break;
-        }
-      }
+            const auto destination{frame.traverse(reference.destination)};
+            if (!destination.has_value()) {
+              return true;
+            }
+
+            const auto relative_dest{
+                destination->get().pointer.resolve_from(location.pointer)};
+            return relative_dest.empty() ||
+                   !relative_dest.at(0).is_property() ||
+                   relative_dest.at(0).to_property() != "allOf";
+          })};
 
       if (all_refs_fixed) {
         this->strategy_ = Strategy::MergeIntoAllOf;

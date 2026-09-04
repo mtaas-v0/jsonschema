@@ -3,7 +3,6 @@
 
 #include <sourcemeta/blaze/configuration.h>
 #include <sourcemeta/blaze/foundation.h>
-#include <sourcemeta/blaze/frame.h>
 #include <sourcemeta/core/io.h>
 #include <sourcemeta/core/json.h>
 #include <sourcemeta/core/jsonpointer.h>
@@ -29,7 +28,6 @@
 #include <string_view> // std::string_view
 #include <thread>      // std::thread
 #include <utility>     // std::unreachable
-#include <variant>     // std::visit
 
 namespace sourcemeta::jsonschema {
 
@@ -257,16 +255,20 @@ bundle_for_evaluation(const sourcemeta::core::JSON &schema,
 }
 
 inline auto
-frame_for_evaluation(sourcemeta::blaze::SchemaFrame &frame,
-                     const sourcemeta::core::JSON &bundled,
+frame_for_evaluation(const sourcemeta::core::JSON &bundled,
                      const sourcemeta::blaze::SchemaResolver &resolver,
                      const std::string &dialect, const std::string &default_id,
                      const std::filesystem::path &resolution_base,
                      const sourcemeta::core::PointerPositionTracker &positions)
-    -> void {
+    -> sourcemeta::blaze::SchemaFrame {
   try {
-    frame.analyse(bundled, sourcemeta::blaze::schema_walker, resolver, dialect,
-                  default_id);
+    return sourcemeta::blaze::SchemaFrame{
+        sourcemeta::blaze::SchemaFrame::Mode::References,
+        bundled,
+        sourcemeta::blaze::schema_walker,
+        resolver,
+        dialect,
+        default_id};
   } catch (const sourcemeta::blaze::SchemaKeywordError &error) {
     throw sourcemeta::core::FileError<sourcemeta::blaze::SchemaKeywordError>(
         resolution_base, error);
@@ -327,6 +329,17 @@ inline auto compile_for_evaluation(
   } catch (const sourcemeta::blaze::CompilerInvalidRegexError &error) {
     throw sourcemeta::core::FileError<
         sourcemeta::blaze::CompilerInvalidRegexError>(resolution_base, error);
+  } catch (const sourcemeta::blaze::CompilerError &error) {
+    const auto position{positions.get(error.location())};
+    if (position.has_value()) {
+      throw PositionError<
+          sourcemeta::core::FileError<sourcemeta::blaze::CompilerError>>(
+          std::get<0>(position.value()), std::get<1>(position.value()),
+          resolution_base, error);
+    }
+
+    throw sourcemeta::core::FileError<sourcemeta::blaze::CompilerError>(
+        resolution_base, error);
   } catch (
       const sourcemeta::blaze::CompilerReferenceTargetNotSchemaError &error) {
     throw sourcemeta::core::FileError<
@@ -433,33 +446,6 @@ inline auto print(const Entries &output,
 }
 
 inline auto
-print_annotations(const sourcemeta::blaze::SimpleOutput &output,
-                  const sourcemeta::core::Options &options,
-                  const sourcemeta::core::PointerPositionTracker &tracker,
-                  std::ostream &stream) -> void {
-  if (options.contains("verbose")) {
-    for (const auto &annotation : output.annotations()) {
-      stream << "annotation: ";
-      sourcemeta::core::stringify(annotation.value, stream);
-      stream << "\n  at instance location \"";
-      sourcemeta::core::stringify(annotation.instance_location, stream);
-      stream << "\"";
-
-      const auto position{tracker.get(
-          sourcemeta::core::to_pointer(annotation.instance_location))};
-      if (position.has_value()) {
-        const auto [line, column, end_line, end_column] = position.value();
-        stream << " (line " << line << ", column " << column << ")";
-      }
-
-      stream << "\n  at evaluate path \"";
-      sourcemeta::core::stringify(annotation.evaluate_path, stream);
-      stream << "\"\n";
-    }
-  }
-}
-
-inline auto
 trace_callback(const sourcemeta::core::PointerPositionTracker &tracker,
                std::ostream &stream)
     -> sourcemeta::blaze::TraceOutput::Callback {
@@ -525,15 +511,8 @@ trace_callback(const sourcemeta::core::PointerPositionTracker &tracker,
     stream << "\n";
     stream << "   at keyword location \"" << entry.keyword_location << "\"\n";
 
-    if (entry.vocabulary.first) {
-      stream << "   at vocabulary \"";
-      if (entry.vocabulary.second.has_value()) {
-        std::visit([&stream](const auto &vocabulary) { stream << vocabulary; },
-                   entry.vocabulary.second.value());
-      } else {
-        stream << "<unknown>";
-      }
-      stream << "\"\n";
+    if (entry.vocabulary.has_value()) {
+      stream << "   at vocabulary \"" << entry.vocabulary.value() << "\"\n";
     }
   };
 }

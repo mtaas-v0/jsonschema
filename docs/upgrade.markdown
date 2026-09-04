@@ -6,8 +6,13 @@ jsonschema upgrade <schema.json|.yaml> [--to/-t draft4|draft6|draft7|2019-09|202
   [--meta/-m] [--http/-h] [--verbose/-v] [--debug/-g] [--json/-j]
   [--header/-H "<name>: <value>"]
   [--resolve/-r <schemas-or-directories> ...]
-  [--default-dialect/-d <uri>]
+  [--default-dialect/-d <uri>] [--configuration/-C <path>]
 ```
+
+> [!NOTE]
+> See [Resolving External References](./guides/resolution.markdown) for every way of
+> making referenced schemas available, including how to handle a reference whose
+> URI differs from the identifier the target schema declares.
 
 JSON Schema dialects are not always backwards compatible. The `upgrade` command
 rewrites a schema to conform to a newer dialect, taking every subtletly across

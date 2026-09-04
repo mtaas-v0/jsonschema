@@ -101,9 +101,15 @@ documentation:
 - [`jsonschema decode`](./docs/decode.markdown)
 - [`jsonschema install`](./docs/install.markdown) (for fetching external schema dependencies)
 
+> See [Resolving External References](./docs/guides/resolution.markdown) for how the
+CLI locates the schemas that your schemas reference, covering the
+`--resolve/-r` option, URI remapping, and HTTP resolution.
+
 > See [`jsonschema.json`](./docs/configuration.markdown) for an _experimental_
 manifest for describing JSON Schema data models inspired by NPM's
-`package.json`, including dependency management.
+`package.json`, including dependency management. Every command takes a
+`--configuration/-C` option to select one explicitly instead of looking for it
+next to your schemas.
 
 Note that YAML is supported in most commands!
 
@@ -158,7 +164,7 @@ Where `X.Y.Z` is replaced with the desired version. For example:
   uses: actions/checkout@v4
 
 - name: Install the JSON Schema CLI
-  uses: sourcemeta/jsonschema@v16.8.0
+  uses: sourcemeta/jsonschema@v16.9.0
 
 # Then use as usual
 - run: jsonschema fmt path/to/schemas --check

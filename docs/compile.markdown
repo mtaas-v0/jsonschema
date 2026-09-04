@@ -10,8 +10,13 @@ jsonschema compile <schema.json|.yaml> [--http/-h] [--verbose/-v] [--debug/-g]
   [--resolve/-r <schemas-or-directories> ...] [--extension/-e <extension>]
   [--ignore/-i <schemas-or-directories>] [--fast/-f] [--default-dialect/-d <uri>]
   [--minify/-m] [--json/-j] [--include/-n <name>] [--entrypoint/-p <pointer|uri>]
-  [--format-assertion/-F]
+  [--format-assertion/-F] [--configuration/-C <path>]
 ```
+
+> [!NOTE]
+> See [Resolving External References](./guides/resolution.markdown) for every way of
+> making referenced schemas available, including how to handle a reference whose
+> URI differs from the identifier the target schema declares.
 
 The `validate` command will first compile the schema into an optimised
 low-level form (the compiled _template_) before evaluating using the

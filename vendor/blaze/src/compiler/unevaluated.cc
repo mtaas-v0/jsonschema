@@ -1,12 +1,12 @@
 #include <sourcemeta/blaze/compiler.h>
-#include <sourcemeta/blaze/frame.h>
+#include <sourcemeta/blaze/foundation.h>
 
 #include "compile_helpers.h"
 
 namespace {
 using namespace sourcemeta::core;
 using namespace sourcemeta::blaze;
-using Known = Vocabularies::Known;
+using Known = SchemaVocabularies::Known;
 
 // NOLINTBEGIN(bugprone-throwing-static-initialization)
 static const std::string UNEVALUATED_PROPERTIES{"unevaluatedProperties"};
@@ -116,7 +116,7 @@ auto find_adjacent_dependencies(
       case SchemaKeywordType::ApplicatorValueTraverseParent:
         [[fallthrough]];
       case SchemaKeywordType::ApplicatorValueInPlaceMaybe:
-        if (is_schema(property.second)) {
+        if ((property.second.is_object() || property.second.is_boolean())) {
           find_adjacent_dependencies(
               current, schema, frame, walker, resolver, keywords, root,
               frame.traverse(entry, make_weak_pointer(property.first)), false,
@@ -132,7 +132,8 @@ auto find_adjacent_dependencies(
                 frame.traverse(entry, make_weak_pointer(property.first, index)),
                 false, result);
           }
-        } else if (is_schema(property.second)) {
+        } else if ((property.second.is_object() ||
+                    property.second.is_boolean())) {
           find_adjacent_dependencies(
               current, schema, frame, walker, resolver, keywords, root,
               frame.traverse(entry, make_weak_pointer(property.first)), false,
@@ -166,19 +167,21 @@ auto register_under_all_bases(SchemaUnevaluatedEntries &result,
                               const JSON::String &keyword,
                               const SchemaUnevaluatedEntry &value) -> void {
   result.emplace(frame.uri(location, make_weak_pointer(keyword)), value);
-  for (const auto &alternate : frame.locations()) {
-    if (alternate.second.pointer != location.pointer ||
-        alternate.second.base == location.base) {
-      continue;
+  frame.for_each_location([&](const SchemaReferenceType, const std::string_view,
+                              const SchemaFrame::Location &alternate) -> void {
+    if (alternate.pointer != location.pointer ||
+        alternate.base == location.base) {
+      return;
     }
-    if (alternate.second.type != SchemaFrame::LocationType::Subschema &&
-        alternate.second.type != SchemaFrame::LocationType::Resource &&
-        alternate.second.type != SchemaFrame::LocationType::Anchor) {
-      continue;
+
+    if (alternate.type != SchemaFrame::LocationType::Subschema &&
+        alternate.type != SchemaFrame::LocationType::Resource &&
+        alternate.type != SchemaFrame::LocationType::Anchor) {
+      return;
     }
-    result.emplace(frame.uri(alternate.second, make_weak_pointer(keyword)),
-                   value);
-  }
+
+    result.emplace(frame.uri(alternate, make_weak_pointer(keyword)), value);
+  });
 }
 
 } // namespace
@@ -196,27 +199,21 @@ auto unevaluated(const JSON &schema, const SchemaFrame &frame,
     -> SchemaUnevaluatedEntries {
   SchemaUnevaluatedEntries result;
 
-  for (const auto &entry : frame.locations()) {
-    if (entry.second.type != SchemaFrame::LocationType::Subschema &&
-        entry.second.type != SchemaFrame::LocationType::Resource) {
-      continue;
-    }
-
-    const auto &subschema{get(schema, entry.second.pointer)};
-    assert(is_schema(subschema));
+  frame.for_each_subschema([&](const SchemaFrame::Location &location) -> void {
+    const auto &subschema{get(schema, location.pointer)};
+    assert((subschema.is_object() || subschema.is_boolean()));
     if (!subschema.is_object()) {
-      continue;
+      return;
     }
 
     const bool has_unevaluated_properties{
         subschema.defines("unevaluatedProperties")};
     const bool has_unevaluated_items{subschema.defines("unevaluatedItems")};
     if (!has_unevaluated_properties && !has_unevaluated_items) {
-      continue;
+      return;
     }
 
-    const auto &subschema_vocabularies{
-        frame.vocabularies(entry.second, resolver)};
+    const auto &subschema_vocabularies{frame.vocabularies(location, resolver)};
 
     // The same pointer may be reachable through alternate identifiers whose
     // dynamic anchors carry a different base, so we register the entry under
@@ -233,8 +230,8 @@ auto unevaluated(const JSON &schema, const SchemaFrame &frame,
             "unevaluatedProperties", schema, frame, walker, resolver,
             {"properties", "patternProperties", "additionalProperties",
              "unevaluatedProperties"},
-            entry.second, entry.second, true, unevaluated);
-        register_under_all_bases(result, frame, entry.second,
+            location, location, true, unevaluated);
+        register_under_all_bases(result, frame, location,
                                  UNEVALUATED_PROPERTIES, unevaluated);
       }
     }
@@ -247,21 +244,21 @@ auto unevaluated(const JSON &schema, const SchemaFrame &frame,
               Known::JSON_Schema_2020_12_Applicator)) {
         find_adjacent_dependencies(
             "unevaluatedItems", schema, frame, walker, resolver,
-            {"prefixItems", "items", "contains", "unevaluatedItems"},
-            entry.second, entry.second, true, unevaluated);
-        register_under_all_bases(result, frame, entry.second, UNEVALUATED_ITEMS,
+            {"prefixItems", "items", "contains", "unevaluatedItems"}, location,
+            location, true, unevaluated);
+        register_under_all_bases(result, frame, location, UNEVALUATED_ITEMS,
                                  unevaluated);
       } else if (subschema_vocabularies.contains(
                      Known::JSON_Schema_2019_09_Applicator)) {
         find_adjacent_dependencies(
             "unevaluatedItems", schema, frame, walker, resolver,
-            {"items", "additionalItems", "unevaluatedItems"}, entry.second,
-            entry.second, true, unevaluated);
-        register_under_all_bases(result, frame, entry.second, UNEVALUATED_ITEMS,
+            {"items", "additionalItems", "unevaluatedItems"}, location,
+            location, true, unevaluated);
+        register_under_all_bases(result, frame, location, UNEVALUATED_ITEMS,
                                  unevaluated);
       }
     }
-  }
+  });
 
   return result;
 }

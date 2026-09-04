@@ -43,7 +43,6 @@ WRITE expected_0.txt UNTIL EOF
 1>    value true
 1>    at instance location "/foo" (line 1, column 3)
 1>    at keyword location "[CWD_URI]/schema.json#/properties/foo/unknown"
-1>    at vocabulary "<unknown>"
 1>
 1> -> (push) "/properties/foo/type" (AssertionTypeStrict)
 1>    at instance location "/foo" (line 1, column 3)
@@ -55,7 +54,7 @@ WRITE expected_0.txt UNTIL EOF
 1>    at keyword location "[CWD_URI]/schema.json#/properties/foo/type"
 1>    at vocabulary "https://json-schema.org/draft/2020-12/vocab/validation"
 1>
-1> @- (annotation) "/properties" (AnnotationEmit)
+1> @- (annotation) "/properties" (AnnotationEmitWrapped)
 1>    value "foo"
 1>    at instance location "" (line 1, column 1)
 1>    at keyword location "[CWD_URI]/schema.json#/properties"

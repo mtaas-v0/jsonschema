@@ -11,8 +11,13 @@ jsonschema test [schemas-or-directories...]
   [--resolve/-r <schemas-or-directories> ...]
   [--extension/-e <extension>] [--ignore/-i <schemas-or-directories>]
   [--default-dialect/-d <uri>] [--json/-j] [--format-assertion/-F]
-  [--jobs/-J <count>]
+  [--jobs/-J <count>] [--configuration/-C <path>]
 ```
+
+> [!NOTE]
+> See [Resolving External References](./guides/resolution.markdown) for every way of
+> making referenced schemas available, including how to handle a reference whose
+> URI differs from the identifier the target schema declares.
 
 Schemas are code. As such, you should run an automated unit testing suite
 against them. Just like popular test frameworks like [Jest](https://jestjs.io),

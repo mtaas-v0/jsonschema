@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.24)
 project(blaze VERSION 0.0.1 LANGUAGES CXX
   DESCRIPTION "The ultra high-performance JSON Schema evaluator"
   HOMEPAGE_URL "https://github.com/sourcemeta/blaze")
@@ -15,7 +15,6 @@ option(BLAZE_CODEGEN "Build the Blaze codegen library" ON)
 option(BLAZE_CANONICALIZER "Build the Blaze canonicalizer library" ON)
 option(BLAZE_EDITOR "Build the Blaze editor schema compatibility library" ON)
 option(BLAZE_FOUNDATION "Build the Blaze foundation JSON Schema library" ON)
-option(BLAZE_FRAME "Build the Blaze frame library" ON)
 option(BLAZE_BUNDLE "Build the Blaze bundle library" ON)
 option(BLAZE_FORMAT "Build the Blaze format library" ON)
 option(BLAZE_TESTS "Build the Blaze tests" OFF)
@@ -59,10 +58,6 @@ endif()
 
 if(BLAZE_FOUNDATION)
   add_subdirectory(src/foundation)
-endif()
-
-if(BLAZE_FRAME)
-  add_subdirectory(src/frame)
 endif()
 
 if(BLAZE_BUNDLE)
@@ -131,11 +126,17 @@ if(PROJECT_IS_TOP_LEVEL)
       COMMAND "${Python3_EXECUTABLE}"
         "${PROJECT_SOURCE_DIR}/contrib/format_trace_json.py"
         "${PROJECT_SOURCE_DIR}/test/evaluator/evaluator_draft3.json"
+        "${PROJECT_SOURCE_DIR}/test/evaluator/evaluator_draft3_invalid.json"
         "${PROJECT_SOURCE_DIR}/test/evaluator/evaluator_draft4.json"
+        "${PROJECT_SOURCE_DIR}/test/evaluator/evaluator_draft4_invalid.json"
         "${PROJECT_SOURCE_DIR}/test/evaluator/evaluator_draft6.json"
+        "${PROJECT_SOURCE_DIR}/test/evaluator/evaluator_draft6_invalid.json"
         "${PROJECT_SOURCE_DIR}/test/evaluator/evaluator_draft7.json"
+        "${PROJECT_SOURCE_DIR}/test/evaluator/evaluator_draft7_invalid.json"
         "${PROJECT_SOURCE_DIR}/test/evaluator/evaluator_2019_09.json"
+        "${PROJECT_SOURCE_DIR}/test/evaluator/evaluator_2019_09_invalid.json"
         "${PROJECT_SOURCE_DIR}/test/evaluator/evaluator_2020_12.json"
+        "${PROJECT_SOURCE_DIR}/test/evaluator/evaluator_2020_12_invalid.json"
         "${PROJECT_SOURCE_DIR}/test/evaluator/evaluator_openapi_3_1.json"
         "${PROJECT_SOURCE_DIR}/test/evaluator/evaluator_openapi_3_2.json"
         "${PROJECT_SOURCE_DIR}/test/output/output_standard_basic.json"
@@ -151,10 +152,6 @@ if(BLAZE_TESTS)
 
   if(BLAZE_FOUNDATION)
     add_subdirectory(test/foundation)
-  endif()
-
-  if(BLAZE_FRAME)
-    add_subdirectory(test/frame)
   endif()
 
   if(BLAZE_BUNDLE)

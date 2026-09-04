@@ -3,20 +3,21 @@
 
 #include "big_coefficient.h"
 
-#include <array>     // std::array
-#include <cassert>   // assert
-#include <charconv>  // std::to_chars
-#include <cmath>     // std::isfinite, std::isnan, std::isinf, std::abs,
-                     // std::frexp, std::ldexp, std::signbit
-#include <cstddef>   // std::size_t
-#include <cstring>   // std::strlen
-#include <iomanip>   // std::setprecision
-#include <limits>    // std::numeric_limits
-#include <optional>  // std::optional, std::nullopt
-#include <sstream>   // std::ostringstream
-#include <stdexcept> // std::out_of_range
-#include <string>    // std::string, std::stof, std::stod
-#include <vector>    // std::vector
+#include <array>       // std::array
+#include <cassert>     // assert
+#include <charconv>    // std::to_chars
+#include <cmath>       // std::isfinite, std::isnan, std::isinf, std::abs,
+                       // std::frexp, std::ldexp, std::signbit
+#include <cstddef>     // std::size_t
+#include <cstring>     // std::strlen
+#include <iomanip>     // std::setprecision
+#include <limits>      // std::numeric_limits
+#include <optional>    // std::optional, std::nullopt
+#include <sstream>     // std::ostringstream
+#include <stdexcept>   // std::out_of_range
+#include <string>      // std::string, std::stof, std::stod
+#include <string_view> // std::string_view
+#include <vector>      // std::vector
 
 namespace {
 
@@ -486,6 +487,31 @@ auto format_special_value(std::string &result, std::uint8_t flags,
   }
 
   return false;
+}
+
+// The General Decimal Arithmetic Specification states that the result of an
+// arithmetic operation with a NaN operand carries a sign and diagnostic
+// information "copied from the first operand which is a signaling NaN, or if
+// neither is signaling then from the first operand which is a NaN"
+auto left_nan_has_precedence(const sourcemeta::core::Decimal &left,
+                             const sourcemeta::core::Decimal &right) -> bool {
+  if (left.is_snan()) {
+    return true;
+  }
+
+  if (right.is_snan()) {
+    return false;
+  }
+
+  return left.is_nan();
+}
+
+auto propagate_nan(const sourcemeta::core::Decimal &left,
+                   const sourcemeta::core::Decimal &right)
+    -> sourcemeta::core::Decimal {
+  const auto &source{left_nan_has_precedence(left, right) ? left : right};
+  const auto result{sourcemeta::core::Decimal::nan(source.nan_payload())};
+  return source.is_signed() ? -result : result;
 }
 
 } // namespace
@@ -990,7 +1016,10 @@ auto Decimal::to_integral() const -> Decimal {
   }
 
   if (this->exponent_ >= 0) {
-    return *this;
+    Decimal result{*this};
+    result.flags_ =
+        static_cast<std::uint8_t>(result.flags_ & ~FLAG_INTEGER_LITERAL);
+    return result;
   }
 
   if ((this->flags_ & FLAG_BIG) != 0) {
@@ -999,14 +1028,28 @@ auto Decimal::to_integral() const -> Decimal {
     auto number_of_digits = static_cast<std::int32_t>(digit_string.size());
     auto digits_to_remove = -this->exponent_;
 
-    if (digits_to_remove >= number_of_digits) {
+    if (digits_to_remove > number_of_digits) {
       Decimal result;
+      if ((this->flags_ & FLAG_SIGN) != 0) {
+        result.flags_ = FLAG_SIGN;
+      }
+
       return result;
     }
 
-    auto integer_string = digit_string.substr(
-        0, static_cast<std::size_t>(number_of_digits - digits_to_remove));
-    Decimal result{integer_string};
+    const auto kept_digits =
+        static_cast<std::size_t>(number_of_digits - digits_to_remove);
+    const std::string_view kept{digit_string.data(), kept_digits};
+    const std::string_view dropped{digit_string.data() + kept_digits,
+                                   digit_string.size() - kept_digits};
+    Decimal result{kept_digits == 0 ? std::string{"0"}
+                                    : digit_string.substr(0, kept_digits)};
+    if (rounds_up_half_even(kept, dropped)) {
+      result += Decimal{1};
+    }
+
+    result.flags_ =
+        static_cast<std::uint8_t>(result.flags_ & ~FLAG_INTEGER_LITERAL);
     if ((this->flags_ & FLAG_SIGN) != 0) {
       result.flags_ |= FLAG_SIGN;
     }
@@ -1017,9 +1060,14 @@ auto Decimal::to_integral() const -> Decimal {
   auto coefficient = this->coefficient_;
   auto digits_to_remove = -this->exponent_;
 
-  if (static_cast<std::uint32_t>(digits_to_remove) >=
+  if (static_cast<std::uint32_t>(digits_to_remove) >
       digit_count(static_cast<std::uint64_t>(coefficient))) {
-    return Decimal{};
+    Decimal result;
+    if ((this->flags_ & FLAG_SIGN) != 0) {
+      result.flags_ = FLAG_SIGN;
+    }
+
+    return result;
   }
 
   std::int64_t divisor = 1;
@@ -1444,12 +1492,8 @@ auto Decimal::divide_integer(const Decimal &other) const -> Decimal {
     throw NumericInvalidOperationError{};
   }
 
-  if (this->is_nan()) {
-    return Decimal::nan(this->nan_payload());
-  }
-
-  if (other.is_nan()) {
-    return Decimal::nan(other.nan_payload());
+  if (this->is_nan() || other.is_nan()) {
+    return propagate_nan(*this, other);
   }
 
   if (this->is_infinite() && other.is_infinite()) {
@@ -1720,7 +1764,7 @@ auto Decimal::operator>=(const Decimal &other) const -> bool {
 auto Decimal::operator+=(const Decimal &other) -> Decimal & {
   if (!this->is_finite() || !other.is_finite()) {
     if (this->is_nan() || other.is_nan()) {
-      *this = Decimal::nan();
+      *this = propagate_nan(*this, other);
       return *this;
     }
 
@@ -1742,11 +1786,24 @@ auto Decimal::operator+=(const Decimal &other) -> Decimal & {
   check_exponent_overflow(this->exponent_, other.exponent_);
 
   if (other.is_zero()) {
+    // The General Decimal Arithmetic Specification states that for addition
+    // "the sign of a zero result is 0 unless either both operands were
+    // negative or the signs of the operands were different and the rounding
+    // is round-floor", so a positive zero addend clears the sign of a
+    // negative zero
+    if (this->is_zero() && (other.flags_ & FLAG_SIGN) == 0) {
+      this->flags_ = static_cast<std::uint8_t>(this->flags_ & ~FLAG_SIGN);
+    }
+
+    this->flags_ =
+        static_cast<std::uint8_t>(this->flags_ & ~FLAG_INTEGER_LITERAL);
     return *this;
   }
 
   if (this->is_zero()) {
     *this = other;
+    this->flags_ =
+        static_cast<std::uint8_t>(this->flags_ & ~FLAG_INTEGER_LITERAL);
     return *this;
   }
 
@@ -1842,13 +1899,20 @@ auto Decimal::operator+=(const Decimal &other) -> Decimal & {
 }
 
 auto Decimal::operator-=(const Decimal &other) -> Decimal & {
+  // Negating the right operand first would flip the sign that a NaN operand
+  // must contribute to the result unchanged
+  if (this->is_nan() || other.is_nan()) {
+    *this = propagate_nan(*this, other);
+    return *this;
+  }
+
   return *this += (-other);
 }
 
 auto Decimal::operator*=(const Decimal &other) -> Decimal & {
   if (!this->is_finite() || !other.is_finite()) {
     if (this->is_nan() || other.is_nan()) {
-      *this = Decimal::nan();
+      *this = propagate_nan(*this, other);
       return *this;
     }
 
@@ -1914,11 +1978,10 @@ auto Decimal::operator*=(const Decimal &other) -> Decimal & {
   if (product <= static_cast<sourcemeta::core::uint128_t>(COMPACT_MAX)) {
     this->coefficient_ = static_cast<std::int64_t>(product);
     this->exponent_ = result_exponent;
+    // The General Decimal Arithmetic Specification states that "the sign of
+    // the result of a multiplication or division will be 1 only if the
+    // operands have different signs", which holds for a zero product too
     this->flags_ = result_negative ? FLAG_SIGN : 0;
-    if (this->coefficient_ == 0) {
-      this->flags_ = 0;
-    }
-
   } else {
     auto left_big = coefficient_as_big(this->coefficient_,
                                        this->coefficient_high_, this->flags_);
@@ -1937,7 +2000,7 @@ auto Decimal::operator*=(const Decimal &other) -> Decimal & {
 
 auto Decimal::operator/=(const Decimal &other) -> Decimal & {
   if (this->is_nan() || other.is_nan()) {
-    *this = Decimal::nan();
+    *this = propagate_nan(*this, other);
     return *this;
   }
 
@@ -1981,12 +2044,11 @@ auto Decimal::operator/=(const Decimal &other) -> Decimal & {
   auto [quotient, remainder] = scaled.divide_modulo(divisor_big);
 
   free_big_coefficient(this->coefficient_, this->flags_);
+  // The General Decimal Arithmetic Specification states that "the sign of the
+  // result of a multiplication or division will be 1 only if the operands have
+  // different signs", which holds for a zero quotient too
   store_big_result(this->coefficient_, this->coefficient_high_, this->flags_,
                    std::move(quotient), result_negative);
-  if (this->coefficient_ == 0 && ((this->flags_ & FLAG_BIG) == 0)) {
-    this->flags_ = 0;
-  }
-
   this->exponent_ = this->exponent_ - other.exponent_ - WORKING_PRECISION;
 
   round_to_precision(this->coefficient_, this->coefficient_high_,
@@ -1996,7 +2058,7 @@ auto Decimal::operator/=(const Decimal &other) -> Decimal & {
 
 auto Decimal::operator%=(const Decimal &other) -> Decimal & {
   if (this->is_nan() || other.is_nan()) {
-    *this = Decimal::nan();
+    *this = propagate_nan(*this, other);
     return *this;
   }
 
@@ -2025,6 +2087,8 @@ auto Decimal::operator%=(const Decimal &other) -> Decimal & {
   divisor_magnitude.flags_ =
       static_cast<std::uint8_t>(divisor_magnitude.flags_ & ~FLAG_SIGN);
   if (dividend_magnitude < divisor_magnitude) {
+    this->flags_ =
+        static_cast<std::uint8_t>(this->flags_ & ~FLAG_INTEGER_LITERAL);
     return *this;
   }
 

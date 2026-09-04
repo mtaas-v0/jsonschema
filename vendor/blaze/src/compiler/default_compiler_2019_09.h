@@ -14,7 +14,20 @@ auto compiler_2019_09_applicator_dependentschemas(
     const DynamicContext &dynamic_context, const Instructions &)
     -> Instructions {
   if (!schema_context.schema.at(dynamic_context.keyword).is_object()) {
-    return {};
+    throw sourcemeta::blaze::CompilerError(
+        schema_context.base, absolute_schema_location(context, schema_context),
+        EXPECTED_OBJECT);
+  }
+
+  if (!std::ranges::all_of(
+          schema_context.schema.at(dynamic_context.keyword).as_object(),
+          [allow_boolean = booleans_are_schemas(schema_context.vocabularies)](
+              const auto &entry) -> bool {
+            return is_schema(entry.second, allow_boolean);
+          })) {
+    throw sourcemeta::blaze::CompilerError(
+        schema_context.base, absolute_schema_location(context, schema_context),
+        EXPECTED_SCHEMA_OBJECT);
   }
 
   if (schema_context.schema.defines("type") &&
@@ -36,7 +49,7 @@ auto compiler_2019_09_applicator_dependentschemas(
   for (const auto &dependent : dependents) {
     const auto &dependency{
         schema_context.schema.at(dynamic_context.keyword).at(dependent)};
-    if (!is_schema(dependency)) {
+    if (!(dependency.is_object() || dependency.is_boolean())) {
       continue;
     }
 
@@ -47,6 +60,10 @@ auto compiler_2019_09_applicator_dependentschemas(
           compile(context, schema_context, relative_dynamic_context(),
                   sourcemeta::blaze::make_weak_pointer(dependent))));
     }
+  }
+
+  if (children.empty()) {
+    return {};
   }
 
   // TODO: Is this wrapper really necessary?
@@ -60,7 +77,19 @@ auto compiler_2019_09_validation_dependentrequired(
     const DynamicContext &dynamic_context, const Instructions &)
     -> Instructions {
   if (!schema_context.schema.at(dynamic_context.keyword).is_object()) {
-    return {};
+    throw sourcemeta::blaze::CompilerError(
+        schema_context.base, absolute_schema_location(context, schema_context),
+        EXPECTED_OBJECT);
+  }
+
+  if (!std::ranges::all_of(
+          schema_context.schema.at(dynamic_context.keyword).as_object(),
+          [](const auto &entry) -> bool {
+            return is_string_array(entry.second);
+          })) {
+    throw sourcemeta::blaze::CompilerError(
+        schema_context.base, absolute_schema_location(context, schema_context),
+        EXPECTED_DEPENDENCIES);
   }
 
   if (schema_context.schema.defines("type") &&
@@ -72,13 +101,13 @@ auto compiler_2019_09_validation_dependentrequired(
   ValueStringMap dependencies;
   for (const auto &entry :
        schema_context.schema.at(dynamic_context.keyword).as_object()) {
-    if (!entry.second.is_array()) {
-      continue;
-    }
 
     std::vector<sourcemeta::core::JSON::String> properties;
     for (const auto &property : entry.second.as_array()) {
-      assert(property.is_string());
+      if (!property.is_string()) {
+        continue;
+      }
+
       properties.push_back(property.to_string());
     }
 
@@ -271,7 +300,8 @@ auto compiler_2019_09_applicator_unevaluateditems(
     const auto &keyword{dependency.back().to_property()};
     const auto &subschema{sourcemeta::core::get(context.root, dependency)};
     // NOLINTBEGIN(bugprone-branch-clone)
-    if (keyword == "items" && sourcemeta::blaze::is_schema(subschema)) {
+    if (keyword == "items" &&
+        (subschema.is_object() || subschema.is_boolean())) {
       return {};
     } else if (keyword == "additionalItems" || keyword == "unevaluatedItems") {
       return {};
@@ -365,7 +395,7 @@ auto compiler_2019_09_applicator_unevaluatedproperties(
                 "patternProperties"};
             filter_regexes.push_back(
                 {.first = parse_regex(
-                     property.first, schema_context.base,
+                     property.first, context, schema_context.base,
                      schema_context.relative_pointer.initial().concat(
                          sourcemeta::blaze::make_weak_pointer(
                              pattern_properties_keyword))),
@@ -426,10 +456,12 @@ auto compiler_2019_09_core_recursiveref(const Context &context,
                                         const DynamicContext &dynamic_context,
                                         const Instructions &current)
     -> Instructions {
-  const auto &entry{static_frame_entry(context, schema_context)};
+  const auto entry_pointer{absolute_schema_pointer(context, schema_context)};
   // In this case, just behave as a normal static reference
-  if (!context.frame.references().contains(
-          {sourcemeta::blaze::SchemaReferenceType::Dynamic, entry.pointer})) {
+  if (!context.frame
+           .reference(sourcemeta::blaze::SchemaReferenceType::Dynamic,
+                      entry_pointer)
+           .has_value()) {
     return compiler_draft3_core_ref(context, schema_context, dynamic_context,
                                     current);
   }

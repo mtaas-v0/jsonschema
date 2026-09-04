@@ -24,7 +24,7 @@ import {
   ASSERTION_PROPERTY_TYPE_STRICT_ANY, ASSERTION_PROPERTY_TYPE_STRICT_ANY_EVALUATE,
   ASSERTION_ARRAY_PREFIX, ASSERTION_ARRAY_PREFIX_EVALUATE,
   ASSERTION_OBJECT_PROPERTIES_SIMPLE,
-  ANNOTATION_EMIT, ANNOTATION_TO_PARENT, ANNOTATION_BASENAME_TO_PARENT,
+  ANNOTATION_EMIT, ANNOTATION_EMIT_WRAPPED, ANNOTATION_TO_PARENT, ANNOTATION_BASENAME_TO_PARENT,
   EVALUATE,
   LOGICAL_NOT, LOGICAL_NOT_EVALUATE,
   LOGICAL_OR, LOGICAL_AND, LOGICAL_XOR, LOGICAL_CONDITION,
@@ -422,8 +422,8 @@ function formatList(items, conjunction) {
 export function describe(valid, instruction, evaluatePath,
                          instanceLocation, instance, annotation) {
   const opcode = instruction[0];
-  const value = instruction[5];
-  const children = instruction[6];
+  const value = instruction[6];
+  const children = instruction[7];
   const keyword = extractKeyword(evaluatePath);
   const target = resolveTarget(instance, instanceLocation);
   const targetType = jsonTypeOf(target);
@@ -546,7 +546,7 @@ export function describe(valid, instruction, evaluatePath,
       'in scope that declared a recursive anchor';
   }
 
-  if (opcode === ANNOTATION_EMIT) {
+  if (opcode === ANNOTATION_EMIT || opcode === ANNOTATION_EMIT_WRAPPED) {
     if (keyword === 'properties') {
       return 'The object property ' + escapeString(annotation) +
         ' successfully validated against its property subschema';
@@ -1042,6 +1042,13 @@ export function describe(valid, instruction, evaluatePath,
   }
 
   if (opcode === ASSERTION_NOT_TYPE_STRICT_ANY) {
+    // Draft 3 permits a negative `maxLength`, which we compile into a check
+    // that the value is not a string, as no string is that short
+    if (keyword === 'maxLength') {
+      return 'The value was expected to be of a type other than string, as no ' +
+        'string is short enough to satisfy a negative maximum length';
+    }
+
     return describeNotTypesCheck(valid, targetType, value);
   }
 
@@ -1482,13 +1489,13 @@ export function describe(valid, instruction, evaluatePath,
       for (let index = 0; index < childCount; index++) {
         const child = children[index];
         if (child[0] === LOGICAL_WHEN_DEFINES) {
-          const property = child[5];
+          const property = child[6];
           allDependencies.add(property);
           if (!Object.hasOwn(target, property)) continue;
           present.add(property);
           presentWithSchemas.add(property);
         } else if (child[0] === ASSERTION_PROPERTY_DEPENDENCIES) {
-          const entries = child[5];
+          const entries = child[6];
           for (const property in entries) {
             allDependencies.add(property);
             if (Object.hasOwn(target, property)) {
@@ -1564,7 +1571,7 @@ export function describe(valid, instruction, evaluatePath,
 
       for (let index = 0; index < childCount; index++) {
         const child = children[index];
-        const property = child[5];
+        const property = child[6];
         allDependencies.add(property);
         if (Object.hasOwn(target, property)) {
           present.add(property);

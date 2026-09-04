@@ -8,14 +8,14 @@ public:
   [[nodiscard]] auto
   condition(const sourcemeta::core::JSON &schema,
             const sourcemeta::core::JSON &root,
-            const sourcemeta::blaze::Vocabularies &vocabularies,
+            const sourcemeta::blaze::SchemaVocabularies &vocabularies,
             const sourcemeta::blaze::SchemaFrame &frame,
             const sourcemeta::blaze::SchemaFrame::Location &location,
             const sourcemeta::blaze::SchemaWalker &,
             const sourcemeta::blaze::SchemaResolver &, const bool) const
       -> SchemaTransformRule::Result override {
     ONLY_CONTINUE_IF(
-        vocabularies.contains(Vocabularies::Known::JSON_Schema_Draft_3) &&
+        vocabularies.contains(SchemaVocabularies::Known::JSON_Schema_Draft_3) &&
         schema.is_object());
 
     const bool root_via_default_dialect =
@@ -24,29 +24,21 @@ public:
     ONLY_CONTINUE_IF(has_pending_draft_3_pattern(schema) ||
                      root_via_default_dialect);
 
-    for (const auto &entry : frame.locations()) {
-      if (entry.second.type !=
-              sourcemeta::blaze::SchemaFrame::LocationType::Resource &&
-          entry.second.type !=
-              sourcemeta::blaze::SchemaFrame::LocationType::Subschema) {
-        continue;
-      }
+    if (frame.any_subschema_under(
+            location.pointer,
+            [&root](
+                const sourcemeta::blaze::SchemaFrame::Location &entry) -> bool {
+              const auto entry_pointer{
+                  sourcemeta::core::to_pointer(entry.pointer)};
+              const auto &entry_schema{
+                  sourcemeta::core::get(root, entry_pointer)};
+              if (entry_schema.is_object() && entry_schema.defines("$ref")) {
+                return false;
+              }
 
-      if (!is_strict_descendant(location.pointer, entry.second.pointer)) {
-        continue;
-      }
-
-      const auto entry_pointer{
-          sourcemeta::core::to_pointer(entry.second.pointer)};
-      const auto &entry_schema{sourcemeta::core::get(root, entry_pointer)};
-
-      if (entry_schema.is_object() && entry_schema.defines("$ref")) {
-        continue;
-      }
-
-      if (has_pending_draft_3_pattern(entry_schema)) {
-        return false;
-      }
+              return has_pending_draft_3_pattern(entry_schema);
+            })) {
+      return false;
     }
 
     return true;
@@ -415,19 +407,5 @@ private:
     } else if (name == "ip-address") {
       schema.assign("format", sourcemeta::core::JSON{"ipv4"});
     }
-  }
-
-  static auto
-  is_strict_descendant(const sourcemeta::core::WeakPointer &ancestor,
-                       const sourcemeta::core::WeakPointer &candidate) -> bool {
-    if (candidate.size() <= ancestor.size()) {
-      return false;
-    }
-    for (std::size_t index{0}; index < ancestor.size(); ++index) {
-      if (!(ancestor.at(index) == candidate.at(index))) {
-        return false;
-      }
-    }
-    return true;
   }
 };

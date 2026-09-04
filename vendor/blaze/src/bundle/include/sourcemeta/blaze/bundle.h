@@ -18,7 +18,6 @@
 #include <sourcemeta/core/jsonpointer.h>
 
 #include <sourcemeta/blaze/foundation.h>
-#include <sourcemeta/blaze/frame.h>
 
 #include <cstdint>     // std::uint8_t
 #include <functional>  // std::function
@@ -62,7 +61,7 @@ enum class BundleMode : std::uint8_t {
 ///
 /// // A custom resolver that knows about an additional schema
 /// static auto test_resolver(std::string_view identifier)
-///     -> std::optional<sourcemeta::core::JSON> {
+///     -> sourcemeta::blaze::SchemaResolverResult {
 ///   if (identifier == "https://www.example.com/test") {
 ///     return sourcemeta::core::parse_json(R"JSON({
 ///       "$id": "https://www.example.com/test",
@@ -112,7 +111,7 @@ auto dependencies(const sourcemeta::core::JSON &schema,
 ///
 /// // A custom resolver that knows about an additional schema
 /// static auto test_resolver(std::string_view identifier)
-///     -> std::optional<sourcemeta::core::JSON> {
+///     -> sourcemeta::blaze::SchemaResolverResult {
 ///   if (identifier == "https://www.example.com/test") {
 ///     return sourcemeta::core::parse_json(R"JSON({
 ///       "$id": "https://www.example.com/test",
@@ -174,7 +173,7 @@ auto bundle(sourcemeta::core::JSON &schema, const SchemaWalker &walker,
 ///
 /// // A custom resolver that knows about an additional schema
 /// static auto test_resolver(std::string_view identifier)
-///     -> std::optional<sourcemeta::core::JSON> {
+///     -> sourcemeta::blaze::SchemaResolverResult {
 ///   if (identifier == "https://www.example.com/test") {
 ///     return sourcemeta::core::parse_json(R"JSON({
 ///       "$id": "https://www.example.com/test",

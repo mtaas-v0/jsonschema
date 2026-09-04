@@ -19,7 +19,6 @@
 
 #include <sourcemeta/blaze/compiler.h>
 #include <sourcemeta/blaze/foundation.h>
-#include <sourcemeta/blaze/frame.h>
 
 #include <cstdint>     // std::uint8_t
 #include <optional>    // std::optional, std::nullopt
@@ -80,8 +79,16 @@ enum class AlterSchemaMode : std::uint8_t {
 ///   }
 /// })JSON");
 ///
-/// bundle.apply(schema, sourcemeta::blaze::schema_walker,
-///              sourcemeta::blaze::schema_resolver);
+/// const auto result{bundle.apply(schema,
+///   sourcemeta::blaze::schema_walker,
+///   sourcemeta::blaze::schema_resolver,
+///   [](const auto &pointer,
+///      const auto &name,
+///      const auto &message,
+///      const auto &outcome,
+///      const auto dismissed) {
+///     // Do something with the information
+///   })};
 /// ```
 SOURCEMETA_BLAZE_ALTERSCHEMA_EXPORT
 auto add(SchemaTransformer &bundle, const AlterSchemaMode mode) -> void;
@@ -119,7 +126,7 @@ public:
              const Scope scope = Scope::All);
   [[nodiscard]] auto
   condition(const sourcemeta::core::JSON &, const sourcemeta::core::JSON &,
-            const sourcemeta::blaze::Vocabularies &,
+            const sourcemeta::blaze::SchemaVocabularies &,
             const sourcemeta::blaze::SchemaFrame &,
             const sourcemeta::blaze::SchemaFrame::Location &,
             const sourcemeta::blaze::SchemaWalker &,
@@ -143,6 +150,7 @@ private:
 ///
 /// ```cpp
 /// #include <sourcemeta/core/json.h>
+/// #include <sourcemeta/core/jsonpointer.h>
 /// #include <sourcemeta/blaze/alterschema.h>
 /// #include <sourcemeta/blaze/foundation.h>
 /// #include <iostream>
@@ -153,27 +161,29 @@ private:
 ///   "items": { "type": "string" }
 /// })JSON");
 ///
-/// sourcemeta::blaze::SchemaFrame frame{
-///     sourcemeta::blaze::SchemaFrame::Mode::References};
-/// frame.analyse(document, sourcemeta::blaze::schema_walker,
-///               sourcemeta::blaze::schema_resolver);
+/// const sourcemeta::blaze::SchemaFrame frame{
+///     sourcemeta::blaze::SchemaFrame::Mode::References, document,
+///     sourcemeta::blaze::schema_walker, sourcemeta::blaze::schema_resolver};
 ///
+/// const sourcemeta::core::Pointer pointer{"items"};
 /// const auto location{frame.traverse(
-///     sourcemeta::core::WeakPointer{"items"},
+///     sourcemeta::core::to_weak_pointer(pointer),
 ///     sourcemeta::blaze::SchemaFrame::LocationType::Subschema)};
 ///
 /// sourcemeta::core::WeakPointer base;
 /// const sourcemeta::core::JSON result =
 ///   sourcemeta::blaze::wrap(document, frame, location.value().get(),
-///     sourcemeta::blaze::schema_resolver, base);
+///     sourcemeta::blaze::schema_walker, sourcemeta::blaze::schema_resolver,
+///     base);
 ///
 /// sourcemeta::core::prettify(result, std::cerr);
 /// std::cerr << "\n";
 /// ```
 SOURCEMETA_BLAZE_ALTERSCHEMA_EXPORT
 auto wrap(const sourcemeta::core::JSON &schema, const SchemaFrame &frame,
-          const SchemaFrame::Location &location, const SchemaResolver &resolver,
-          sourcemeta::core::WeakPointer &base) -> sourcemeta::core::JSON;
+          const SchemaFrame::Location &location, const SchemaWalker &walker,
+          const SchemaResolver &resolver, sourcemeta::core::WeakPointer &base)
+    -> sourcemeta::core::JSON;
 
 } // namespace sourcemeta::blaze
 

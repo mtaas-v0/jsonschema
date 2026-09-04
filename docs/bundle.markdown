@@ -8,7 +8,13 @@ jsonschema bundle <schema.json|.yaml>
   [--resolve/-r <schemas-or-directories> ...]
   [--extension/-e <extension>] [--ignore/-i <schemas-or-directories>]
   [--without-id/-w] [--default-dialect/-d <uri>] [--json/-j]
+  [--configuration/-C <path>]
 ```
+
+> [!NOTE]
+> See [Resolving External References](./guides/resolution.markdown) for every way of
+> making referenced schemas available, including how to handle a reference whose
+> URI differs from the identifier the target schema declares.
 
 A schema may contain references to remote schemas outside the scope of the
 given schema. These remote schemas may live in other files, or may be served by

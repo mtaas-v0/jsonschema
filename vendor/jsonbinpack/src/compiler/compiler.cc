@@ -12,9 +12,11 @@
 #include <type_traits> // std::true_type
 
 static auto transformer_callback_noop(
-    const sourcemeta::core::Pointer &, const std::string_view,
-    const std::string_view,
-    const sourcemeta::blaze::SchemaTransformRule::Result &,
+    [[maybe_unused]] const sourcemeta::core::Pointer &pointer,
+    [[maybe_unused]] const std::string_view name,
+    [[maybe_unused]] const std::string_view message,
+    [[maybe_unused]] const sourcemeta::blaze::SchemaTransformRule::Result
+        &result,
     [[maybe_unused]] const bool applied) -> void {
   assert(applied);
 }
@@ -90,7 +92,10 @@ auto compile(sourcemeta::core::JSON &schema,
   assert(mapper_result.first);
 
   // The "any" encoding is always the last resort
-  const auto dialect{sourcemeta::blaze::dialect(schema)};
+  const auto *declared{schema.is_object() ? schema.try_at("$schema") : nullptr};
+  const auto dialect{declared != nullptr && declared->is_string()
+                         ? declared->to_string()
+                         : std::string_view{}};
   if (dialect.empty() || dialect != ENCODING_V1) {
     make_encoding(schema, "ANY_PACKED_TYPE_TAG_BYTE_PREFIX",
                   sourcemeta::core::JSON::make_object());
